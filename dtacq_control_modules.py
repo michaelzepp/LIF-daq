@@ -3,6 +3,7 @@ Created on Mon Feb 12 13:16:24 2024
 
 @author: Michael Zepp
 LIF data acquisition using D-tAcq unit over network
+Based on acq400_hapi
 """
 
 import acq400_hapi
@@ -18,8 +19,9 @@ import h5py
 from datetime import datetime
 
 
-def increment_shot(save_data):
+def increment_shot(save_data, save_ind=True):
     save_root = os.path.dirname(save_data)        # ignore shot formatter
+
     if save_root != '':
         try:
             os.makedirs(save_root)
@@ -66,8 +68,9 @@ class Dtacq_Control():
             self.total = self.pre + self.post
         else:
             self.total = self.post
-        self.save_data="10.128.18.162\\transient_capture{}"
-        self.hdf_root="acq1001_420_hdf"
+        self.save_data="data\\transient_capture{}"
+        self.save_ind=False
+        self.hdf_root="data\\acq1001_420_hdf"
         self.save_root = os.path.dirname(self.save_data)
         self.trace=0
         
@@ -204,16 +207,16 @@ class Dtacq_Control():
         cc = acq400_hapi.ChannelClient(self.ip, chan)
         ccraw = cc.read(nsam, data_size=data_size, maxbuf=8000000)
 
-        if self.uut.save_data:
+        if self.uut.save_data and self.save_ind:
             try:
                 os.makedirs(self.uut.save_data)
             except OSError as exception:
                 if exception.errno != errno.EEXIST:
                     raise
 
-            with open("%s/%s_CH%02d" % (self.uut.save_data, self.ip, chan), 'wb') as fid:
-                ccraw.tofile(fid, '')
-            
+            # with open("%s/%s_CH%02d" % (self.uut.save_data, self.ip, chan), 'wb') as fid:
+            #     ccraw.tofile(fid, '')
+        if self.uut.save_data:   
             try:
                 os.makedirs(self.hdf_root)
             except OSError as exception:
@@ -341,7 +344,7 @@ class Dtacq_Control():
             print("INFO: Shotcontroller.handle_data() {} data valid: {}".format(
                 self.ip, self.uut.statmon.data_valid))
         if save_data:
-            shotfile = increment_shot(save_data)
+            shotfile = increment_shot(save_data, self.save_ind)
             with open(shotfile) as sf:
                 last_line = sf.readlines()[-1]
             shotdir = save_data.format(last_line[:-1])
@@ -457,11 +460,11 @@ if __name__ == '__main__':
     pre=1e-3 #s         max: 49.9995 s
     post=20e-3 #s      max: 4 s
     data_num = 8
-    averages = 4
+    averages = 2
     Dtacq=Dtacq_Control(filesize, totaldata, pre=pre, post=post, data_num=data_num)
     
     
-    save_data="10.128.18.162/transient_capture{}"
+    save_data="data/transient_capture{}"
     shotfile="{}/SHOT".format(Dtacq.save_root)
     channels=(1,2,3,4)
     Dtacq.channels=channels
@@ -478,33 +481,33 @@ if __name__ == '__main__':
         print()
         
     Dtacq.hdf_plot(channels, data_num, verbose=False)
-    # save_params = input('Finished taking data. Shall I save parameters? [y/n] ')
-    # if save_params == 'y' or save_params == 'Y':
+    save_params = input('Finished taking data. Shall I save parameters? [y/n] ')
+    if save_params == 'y' or save_params == 'Y':
         
-    #     parDict = {'B [G]': 500,
-    #                 'P_rf [kW]': 1.3,
-    #                 'Neutral Pressure [Pa]': 3,
-    #                 'Radial Position [mm]': 0,
-    #                 'Axial Position [cm]': 15,
-    #                 'LIA Sensitivity': '1 mV',
-    #                 'LIA Time Constant': '1 ms',
-    #                 'LIA Dynamic Reserve': '54 dB',
-    #                 'LIA Phase [deg]': 135,
-    #                 'Laser On?': 'Yes',
-    #                 'Modulation Frequency [kHz]': 84.7,
-    #                 'PMT Optical Density': 1.5,
-    #                 'PMT Bandwidth': '250 kHz',
-    #                 'PMT Gain': 1,
-    #                 'Pulse Length [ms]': 100,
-    #                 'Other Pulse Parameters': 'None',
-    #                 'QWP Angle': 0,
-    #                 'Species': 'Ar II',
-    #                 'Description': 'Ar II LIF'
-    #                 }
+        parDict = {'B [G]': 500,
+                    'P_rf [kW]': 1.3,
+                    'Neutral Pressure [Pa]': 3,
+                    'Radial Position [mm]': 0,
+                    'Axial Position [cm]': 15,
+                    'LIA Sensitivity': '1 mV',
+                    'LIA Time Constant': '1 ms',
+                    'LIA Dynamic Reserve': '54 dB',
+                    'LIA Phase [deg]': 135,
+                    'Laser On?': 'Yes',
+                    'Modulation Frequency [kHz]': 84.7,
+                    'PMT Optical Density': 1.5,
+                    'PMT Bandwidth': '250 kHz',
+                    'PMT Gain': 1,
+                    'Pulse Length [ms]': 100,
+                    'Other Pulse Parameters': 'None',
+                    'QWP Angle': 0,
+                    'Species': 'Ar II',
+                    'Description': 'Ar II LIF'
+                    }
     
-    #     apply_attributes(Dtacq.filename, data_num, parDict)
-    # else:
-    #     print("WARNING: Parameters not saved to .h5 file. Consider updating 'parDict', setting 'averages = 0', and running again")
+        apply_attributes(Dtacq.filename, data_num, parDict)
+    else:
+        print("WARNING: Parameters not saved to .h5 file. Consider updating 'parDict', setting 'averages = 0', and running again")
         
     
     
