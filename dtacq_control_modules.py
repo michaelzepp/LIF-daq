@@ -19,7 +19,7 @@ import h5py
 from datetime import datetime
 
 
-def increment_shot(save_data, save_ind=True):
+def increment_shot(save_data):
     save_root = os.path.dirname(save_data)        # ignore shot formatter
 
     if save_root != '':
@@ -194,10 +194,10 @@ class Dtacq_Control():
         
         
         
-    ####################functions for saving data########################3
+    ####################functions for saving and plotting data########################
         
     
-    def read_chan(self, chan, nsam = 0, data_size = 2):
+    def read_chan(self, chan, nsam = 0, data_size = 2, save_individual=False):
         if chan != 0 and nsam == 0:
             if self.collect_pre:
                 nsam = self.pre+self.post
@@ -207,7 +207,7 @@ class Dtacq_Control():
         cc = acq400_hapi.ChannelClient(self.ip, chan)
         ccraw = cc.read(nsam, data_size=data_size, maxbuf=8000000)
 
-        if self.uut.save_data and self.save_ind:
+        if self.uut.save_data and save_individual:
             try:
                 os.makedirs(self.uut.save_data)
             except OSError as exception:
@@ -246,7 +246,8 @@ class Dtacq_Control():
                 tt = timeit.default_timer() - start
                 print("%s CH%02d complete.. %.3f s %.2f MB/s" %
                     (self.ip, ch, tt, len(chx[-1])*2/1000000/tt))
-
+        t_scale=chx[0].shape[0]/2000
+        self.t = np.linspace(0, t_scale, chx[0].shape[0])
         return chx
     
     
@@ -276,28 +277,26 @@ class Dtacq_Control():
                 nchan = _nchan
                 # print("plotting first {} channels".format(nchan))
                        
-        ax = {}
-        ax0 = None
-        t_scale=len(chx[0][0])/2000
-        self.t = np.linspace(0, t_scale, len(chx[0][0]))
+        # ax = {}
+        # ax0 = None
        
                            
         for chn in range(0, nchan):
             _data = self.uut.chan2volts(self.cmap[0][chn], chx[0][chn]) 
             if not one_plot:
-                axkey = '{}'.format(chn)    
+                # axkey = '{}'.format(chn)    
                 fignum = 1 + chn
                 if verbose:
                     print("calling plt.subplot({}, {}, {})".format(nchan, 1, fignum))
-                if not ax0:                           
-                    ax[axkey] = plt.subplot(nchan, 1, fignum)                        
-                    ax0 = ax[axkey]
-                else:
-                    ax[axkey] = plt.subplot(nchan, 1, fignum, sharex=ax0) 
+                # if not ax0:                           
+                #     ax[axkey] = plt.subplot(nchan, 1, fignum)                        
+                #     ax0 = ax[axkey]
+                # else:
+                #     ax[axkey] = plt.subplot(nchan, 1, fignum, sharex=ax0) 
             _label = "{}.{:03d}".format(self.uut, self.cmap[0][chn])
 
-            plt.suptitle('{} shot {}'.format(self.uut, self.uut.s1.shot))
-            if plot_channels < 0:                 
+            if plot_channels < 0:      
+                plt.suptitle('{} shot {}'.format(self.uut, self.uut.s1.shot))
                 plt.xlabel("Time [ms]")
                 plt.ylabel("Volts")  
                 # print("ax[{}].plot( ... label={})".format(axkey, _label))  
@@ -308,14 +307,16 @@ class Dtacq_Control():
                 # ax[axkey].legend()
                 # plt.legend()
                 plt.tight_layout()
+                plt.show()
             else:
+                plt.suptitle('{} shot {}'.format(self.uut, self.uut.s1.shot))
                 plt.xlabel("Time [ms]")
                 plt.ylabel("counts")                           
                 plt.plot(self.t,chx[0][chn])
-                
+                plt.show()
 
         
-        plt.show()
+        
         
 
 
@@ -344,7 +345,7 @@ class Dtacq_Control():
             print("INFO: Shotcontroller.handle_data() {} data valid: {}".format(
                 self.ip, self.uut.statmon.data_valid))
         if save_data:
-            shotfile = increment_shot(save_data, self.save_ind)
+            shotfile = increment_shot(save_data)
             with open(shotfile) as sf:
                 last_line = sf.readlines()[-1]
             shotdir = save_data.format(last_line[:-1])
@@ -358,9 +359,7 @@ class Dtacq_Control():
         chx = [self.collect_data(self.cmap[0])]
         nchan, nsam = len(chx[0]), len(chx[0][0])
         
-        if not plot_channels:
-            return
-        else:
+        if plot_channels != 0:
             self.live_plotter(plot_channels, chx, nchan, nsam, one_plot) 
             
                     
@@ -369,10 +368,8 @@ class Dtacq_Control():
     def data_saving(self, nchan, chx, verbose=False):
         for chn in range(0, nchan):
             _data = self.uut.chan2volts(self.cmap[0][chn], chx[0][chn])  
-            print(_data)
             with h5py.File(self.filename, mode="a", libver="latest") as dataFile:
                 grp = dataFile.require_group(self.data_num)
-                
                 try:
                     grp.create_dataset("Ch%02d"%(chn+1), shape=(len(_data),1), data=_data, 
                                        dtype='float64', maxshape=(None,None))
@@ -396,18 +393,18 @@ class Dtacq_Control():
                                    
                 dataFile.close()
         
-        with h5py.File(self.filename, mode="a", libver="latest") as dataFile:
-            if nchan>3:
-                dataFile[str(data_num)]["Ch01"].attrs["Channel Name"] = "LIA"
-                dataFile[str(data_num)]["Ch02"].attrs["Channel Name"] = "ref"
-                dataFile[str(data_num)]["Ch03"].attrs["Channel Name"] = "open"
-                dataFile[str(data_num)]["Ch04"].attrs["Channel Name"] = "open"
+        # with h5py.File(self.filename, mode="a", libver="latest") as dataFile:
+        #     if nchan>3:
+        #         dataFile[str(data_num)]["Ch01"].attrs["Channel Name"] = "LIA"
+        #         dataFile[str(data_num)]["Ch02"].attrs["Channel Name"] = "ref"
+        #         dataFile[str(data_num)]["Ch03"].attrs["Channel Name"] = "open"
+        #         dataFile[str(data_num)]["Ch04"].attrs["Channel Name"] = "open"
                 
             dataFile.close()
 
     def hdf_plot(self, channels, data_num, verbose=False):
-        nchan = len(channels)
         full_data=np.zeros((self.total,1))
+        plt.figure()
         for chn in channels:
             with h5py.File(self.filename, mode="a", libver="latest") as dataFile:
                 data = np.array(dataFile[self.data_num]["Ch%02d"%(chn)])
@@ -415,72 +412,72 @@ class Dtacq_Control():
                 data = np.average(data, axis=1)
                 data = np.reshape(data, (-1,1))
                 full_data=np.hstack((full_data,data))
-            fignum = 1 + chn
             if verbose:
-                print("calling plt.subplot({}, {}, {})".format(nchan, 1, fignum))
-            # ax = plt.subplot(nchan, 1, fignum)                        
+                print("plotting averaged data)")
+            
   
             label = "Ch%02d averaged %d times"%(chn, num_averages)
             # plt.suptitle('{} averages'.format(num_averages))
-            if plot_channels < 0:                 
-                plt.xlabel("Time [ms]")
-                plt.ylabel("Volts")  
-                plt.plot(self.t,full_data[:,chn], label=label)
+            plt.xlabel("Time [ms]")
+            plt.ylabel("Volts")  
+            plt.plot(self.t,full_data[:,chn], label=label)
         
         if self.collect_pre:
             plt.axvline(x=self.pre/2000, label="trigger", color="k")
+        plt.title("Averaged Data")
         plt.legend()
         plt.tight_layout()
 
         
         plt.show()
 
-def apply_attributes(filename, data_num, parDict=dict()): 
+def apply_attributes(filename, data_num, parDict=dict(), nchan=0): 
     
-    # print("start..")
-    # start = timeit.default_timer()
+
     with h5py.File(filename, mode="a", libver="latest") as dataFile:
         dataFile[str(data_num)].attrs.update(parDict)
         dataFile[str(data_num)]["Ch01"].attrs["Channel Name"] = "LIA"
-        dataFile[str(data_num)]["Ch02"].attrs["Channel Name"] = "ref"
-        dataFile[str(data_num)]["Ch03"].attrs["Channel Name"] = "open"
-        dataFile[str(data_num)]["Ch04"].attrs["Channel Name"] = "open"
-        
-
+        if nchan>1:
+            dataFile[str(data_num)]["Ch02"].attrs["Channel Name"] = "ref"
+        if nchan>2:
+            dataFile[str(data_num)]["Ch03"].attrs["Channel Name"] = "open"
+        if nchan>3:
+            dataFile[str(data_num)]["Ch04"].attrs["Channel Name"] = "open"
         
         dataFile.close()
-    # tt = timeit.default_timer() - start
-    # print("finished.. %.3f s" % (tt))
+
             
 
 if __name__ == '__main__':
     
     filesize=1 #MB
     totaldata=filesize #MB
-    pre=1e-3 #s         max: 49.9995 s
-    post=20e-3 #s      max: 4 s
-    data_num = 8
+    pre=10e-3 #s         max: 4 s
+    post=100e-3 #s      max: 49.9995 s
+    data_num = 6
     averages = 2
     Dtacq=Dtacq_Control(filesize, totaldata, pre=pre, post=post, data_num=data_num)
     
     
     save_data="data/transient_capture{}"
     shotfile="{}/SHOT".format(Dtacq.save_root)
-    channels=(1,2,3,4)
+    channels=(1,2)
     Dtacq.channels=channels
-    plot_channels=-1
+    plot_channels=0
     
     for shot in range(averages):
         print('Beginning acquisition', shot+1)
         start = timeit.default_timer()
         Dtacq.Trig_setup()
         Dtacq.send_soft_trigger()
-        Dtacq.acquire_data(save_data,channels, plot_channels=plot_channels)
+        Dtacq.acquire_data(save_data, channels, plot_channels=plot_channels)
         tt = timeit.default_timer() - start
         print("Total acquisition took %.3f s" % (tt))
         print()
+       
+    if averages != 0:
+        Dtacq.hdf_plot(channels, data_num, verbose=False)
         
-    Dtacq.hdf_plot(channels, data_num, verbose=False)
     save_params = input('Finished taking data. Shall I save parameters? [y/n] ')
     if save_params == 'y' or save_params == 'Y':
         
@@ -505,7 +502,7 @@ if __name__ == '__main__':
                     'Description': 'Ar II LIF'
                     }
     
-        apply_attributes(Dtacq.filename, data_num, parDict)
+        apply_attributes(Dtacq.filename, data_num, parDict, nchan=len(channels))
     else:
         print("WARNING: Parameters not saved to .h5 file. Consider updating 'parDict', setting 'averages = 0', and running again")
         
