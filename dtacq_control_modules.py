@@ -52,27 +52,27 @@ def increment_shot(save_data):
 
 class Dtacq_Control():
     def __init__(self,filesize=0,totaldata=0,pre=5e-3,post=100e-3, data_num=0):
+        self.collect_pre=True #collect data before trigger
+        self.save_ind=False #saves data from individual shots in separate files
+        self.save_data="data\\transient_capture{}" #where to save individual shot files
+        self.hdf_root="data\\acq1001_420_hdf" #where to save hdf files
+        self.root="" #where to save streamed data
+        
         self.directory=""    
         self.ip = '10.128.18.162'
         self.uut = acq400_hapi.Acq400(self.ip)
         self.RXBUF_LEN = 4096*64
-        self.root="" #Location to save files. Default dir is UUT name.
         self.runtime=120 #s, How long to stream data for
         self.filesize=filesize*200000
         self.totaldata=totaldata*0x100000
-        self.collect_pre=True
-        # self.pre = 10000
         self.pre = int(2e6*pre)
         self.post = int(2e6*post)
         if self.collect_pre:
             self.total = self.pre + self.post
         else:
             self.total = self.post
-        self.save_data="data\\transient_capture{}"
-        self.save_ind=False
-        self.hdf_root="data\\acq1001_420_hdf"
         self.save_root = os.path.dirname(self.save_data)
-        self.trace=0
+        self.trace=0 #print timing of various processes
         
         self.callback=None #for client program use only. Assume object with __call_ method
         self.data_num=str(data_num)
@@ -446,66 +446,6 @@ def apply_attributes(filename, data_num, parDict=dict(), nchan=0):
         
         dataFile.close()
 
-            
-
-if __name__ == '__main__':
-    
-    filesize=1 #MB
-    totaldata=filesize #MB
-    pre=10e-3 #s         max: 4 s
-    post=100e-3 #s      max: 49.9995 s
-    data_num = 6
-    averages = 2
-    Dtacq=Dtacq_Control(filesize, totaldata, pre=pre, post=post, data_num=data_num)
-    
-    
-    save_data="data/transient_capture{}"
-    shotfile="{}/SHOT".format(Dtacq.save_root)
-    channels=(1,2)
-    Dtacq.channels=channels
-    plot_channels=0
-    
-    for shot in range(averages):
-        print('Beginning acquisition', shot+1)
-        start = timeit.default_timer()
-        Dtacq.Trig_setup()
-        Dtacq.send_soft_trigger()
-        Dtacq.acquire_data(save_data, channels, plot_channels=plot_channels)
-        tt = timeit.default_timer() - start
-        print("Total acquisition took %.3f s" % (tt))
-        print()
-       
-    if averages != 0:
-        Dtacq.hdf_plot(channels, data_num, verbose=False)
-        
-    save_params = input('Finished taking data. Shall I save parameters? [y/n] ')
-    if save_params == 'y' or save_params == 'Y':
-        
-        parDict = {'B [G]': 500,
-                    'P_rf [kW]': 1.3,
-                    'Neutral Pressure [Pa]': 3,
-                    'Radial Position [mm]': 0,
-                    'Axial Position [cm]': 15,
-                    'LIA Sensitivity': '1 mV',
-                    'LIA Time Constant': '1 ms',
-                    'LIA Dynamic Reserve': '54 dB',
-                    'LIA Phase [deg]': 135,
-                    'Laser On?': 'Yes',
-                    'Modulation Frequency [kHz]': 84.7,
-                    'PMT Optical Density': 1.5,
-                    'PMT Bandwidth': '250 kHz',
-                    'PMT Gain': 1,
-                    'Pulse Length [ms]': 100,
-                    'Other Pulse Parameters': 'None',
-                    'QWP Angle': 0,
-                    'Species': 'Ar II',
-                    'Description': 'Ar II LIF'
-                    }
-    
-        apply_attributes(Dtacq.filename, data_num, parDict, nchan=len(channels))
-    else:
-        print("WARNING: Parameters not saved to .h5 file. Consider updating 'parDict', setting 'averages = 0', and running again")
-        
     
     
     
