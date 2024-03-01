@@ -16,9 +16,28 @@ import matplotlib.pyplot as plt
 import errno
 import timeit
 import h5py
+import threading
 from datetime import datetime
 
+# class EnableExtTrgAction:
+#     def __init__(self, master):
+#         self.master = master
+#         self.master.s0.SIG_SRC_TRG_0 = "EXT"
+# #        while int(float(self.master.s0.SIG_TRG_EXT_ACTIVE.split(" ")[1])) == 1:
+#         while acq400_hapi.activepv(self.master.s0.SIG_TRG_EXT_ACTIVE):
+#             time.sleep(.1)
+        
+#     # def __call__(self):
+#     #     self.master.s0.SIG_SRC_TRG_0 = "EXT"
+    
+    
+# class TimedShotController(acq400_hapi.ShotControllerWithDataHandler):
+#     @acq400_hapi.timing
 
+#     def __init__(self, uut, shot=None):
+#          super().__init__(uut, shot)
+        
+        
 def increment_shot(save_data):
     save_root = os.path.dirname(save_data)        # ignore shot formatter
 
@@ -81,9 +100,11 @@ class Dtacq_Control():
         self.filename = path.join(self.hdf_root,self.hdfname)
         
         self.ips = [self.ip,"erb605-dtacq.ep.wisc.edu"]
-        
-    def __exit__(self):
+    
+    
+    def close(self):
         self.uut.close()
+        print("socket closed")
         
     
     def make_data_dir(self, verbose=True):
@@ -165,32 +186,48 @@ class Dtacq_Control():
             data.tofile(data_file, '')
             print("runtime exceeded: all stream data written to single file")
     
-    def Trig_setup(self, verbose=False):
+    def Trig_setup(self, trgsrc, verbose=False):
         # Dtacq=Dtacq_Control()
         # acq400_hapi.Acq400UI.add_args(transient=True)
         # if hasattr(self.uut.s0, 'TIM_CTRL_LOCK'):
         #     print("LOCKDOWN {}".format(self.uut))
         #     self.uut.s0.TIM_CTRL_LOCK = 0
         # print("Default transient capture configured")
+        
+        self.uut.statmon.armed.clear()
+        self.uut.statmon.stopped.clear()
+        
+        if trgsrc == "ext":
+            trgevent = [1,0,1]
+        elif trgsrc == "soft":
+            trgevent = [1,1,1]
+                    
+        
         if self.collect_pre:
-            self.uut.configure_pre_post(role="master",trigger=[1,1,1],pre=self.pre, post=self.post)
+            self.uut.configure_pre_post(role="master",trigger=[1,1,1],event=trgevent,pre=self.pre, post=self.post)
         else:
-            self.uut.configure_post(role="master",trigger=[1,1,1], post=self.post)
-
+            self.uut.configure_post(role="master",trigger=trgevent, post=self.post)
+            
+            
         self.uut.s0.set_arm = 1
+        self.uut.statmon.wait_armed
         if verbose:
-            print('Trigger armed: awaiting trigger')
+            print("waiting for trigger")
+        
+        if trgevent[1] == 0:
+            self.uut.statmon.wait_stopped()
         
  
             
-    def send_soft_trigger(self, verbose=False):
-        if verbose:
-            print("waiting until armed")
-        time.sleep(2) #trigger only works after delay
-        self.uut.statmon.wait_armed
-        self.uut.s0.soft_trigger = 1
-        if verbose:
-            print('soft trigger sent')
+    def send_soft_trigger(self, trgsrc, verbose=False):
+        # self.uut.statmon.wait_armed
+        # if verbose:
+        #     print('Trigger armed')
+        if trgsrc == "soft":
+            time.sleep(2) #trigger only works after delay
+            self.uut.s0.soft_trigger = 1
+            if verbose:
+                print('soft trigger sent')
         
         
         
@@ -205,6 +242,7 @@ class Dtacq_Control():
                 nsam = self.post
                 
         cc = acq400_hapi.ChannelClient(self.ip, chan)
+        print("nsam",nsam)
         ccraw = cc.read(nsam, data_size=data_size, maxbuf=8000000)
 
         if self.uut.save_data and save_individual:
@@ -339,6 +377,7 @@ class Dtacq_Control():
     
     
     def acquire_data(self, save_data, channels, one_plot=False, plot_channels=0, verbose=False):
+        
         
         self.cmap = self.map_channels(channels)
         if verbose:
